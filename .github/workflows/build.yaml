@@ -1,0 +1,51 @@
+---
+name: Build kube-resources images
+
+on:
+  push:
+    tag:
+      - 'v*'
+
+env:
+  IMAGE_REGISTRY: "ghcr.io"
+  REGISTRY_USER: "${{ github.repository_owner }}"
+  REGISTRY_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+  IMAGE_REPO: "ghcr.io/${{ github.repository_owner }}"
+  IMAGE_NAME: "kube-resources"
+
+jobs:
+  build:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kube_version: v1.20.13
+          - kube_version: v1.21.7
+          - kube_version: v1.22.4
+          - kube_version: v1.23.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Log in to GitHub Docker Registry
+        uses: docker/login-action@v1
+        with:
+          registry: ${{ env.IMAGE_REGISTRY }}
+          username: ${{ env.REGISTRY_USER }}
+          password: ${{ env.REGISTRY_TOKEN }}
+
+      - name: Download files
+        run: |
+          KUBE_VERSION=${{ matrix.kube_version }} bash download.sh
+          echo -e "FROM scratch\nCOPY kube /kube" > Dockerfile
+
+      - name: Build and push kube-resources image
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          file: Dockerfile
+          tags: |
+            ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ matrix.kube_version }}
